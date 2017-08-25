@@ -25,7 +25,7 @@ public class Order {
     public Log log;
 
 
-    @Procedure(name = "com.maxdemarzi.order.tasks", mode = Mode.READ)
+    @Procedure(name = "com.maxdemarzi.order.tasks", mode = Mode.WRITE)
     @Description("CALL com.maxdemarzi.order.tasks(orderId) - get tasks for orders")
     public Stream<MapResult> orderTasks(@Name("orderId") String orderId) throws IOException {
         ArrayList<Map<String, Object>> tasks = new ArrayList<>();
@@ -44,38 +44,57 @@ public class Order {
             // Gather all of its event ids in to a Set
             Set<String> eventsIds = new HashSet<>();
             for (Path path : eventTraversal.traverse(order)) {
-                eventsIds.add((String) path.endNode().getProperty("id"));
+                String eventId = (String) path.endNode().getProperty("id");
+                // If this is a negative event, remove existing event id
+                if (eventId.charAt(0) == '-') {
+                    eventsIds.remove(eventId.substring(1, eventId.length()));
+                } else {
+                    eventsIds.add(eventId);
+                }
             }
 
-            // Find the tasks for the order
+            // Find the work required to complete the order
             for (Relationship r1 : order.getRelationships(Direction.OUTGOING, RelationshipTypes.HAS_WORK)) {
                 Node work = r1.getEndNode();
+                // Figure out who will perform this work
                 Node provider = work.getSingleRelationship(RelationshipTypes.PERFORMS, Direction.INCOMING).getStartNode();
                 String providerName = (String) provider.getProperty("name");
+
+                // For each work item, find the associated tasks
                 for (Relationship r2 : work.getRelationships(Direction.OUTGOING, RelationshipTypes.HAS_TASK)) {
                     Node task = r2.getEndNode();
                     Map<String, Object> properties = task.getAllProperties();
                     properties.put("provider", providerName);
 
-                    // If I have dependencies see what is left to do
-                    String requires = (String) task.getProperty("requires", "");
-                    if (!requires.equals("")) {
-                        BooleanExpression boEx = new BooleanExpression(requires);
-                        boEx.doTabulationMethod();
-                        boEx.doQuineMcCluskey();
-                        boEx.doPetricksMethod();
-                        
+                    // If the task has requirements see what is left to be done
+                    String requires = (String) task.getProperty("requires", null);
+                    if (requires != null) {
+                        // Have we already calculated dependencies?
+                        String[] paths = (String[])task.getProperty("dependencies", null);
+                        if (paths == null) {
+                            // Calculate the dependencies and save them, so we only ever do this once.
+                            BooleanExpression boEx = new BooleanExpression(requires);
+                            boEx.doTabulationMethod();
+                            boEx.doQuineMcCluskey();
+                            boEx.doPetricksMethod();
+                            paths = boEx.getPathExpressions().toArray(new String[]{});
+                            task.setProperty("dependencies", paths);
+                        }
+
+                        // Check our dependencies against the events of the order
                         ArrayList<HashMap<String, Object>> dependencies = new ArrayList<>();
-                        for (String path : boEx.getPathExpressions()) {
+                        for (String path : paths) {
                             String[] ids = path.split("[!&]");
                             char[] rels = path.replaceAll("[^&^!]", "").toCharArray();
                             Set<String> missing = new HashSet<>();
                             Set<String> remove = new HashSet<>();
 
+                            // Check the first required event in the path
                             if (!eventsIds.contains(ids[0])) {
                                 missing.add(ids[0]);
                             }
 
+                            // Check the rest of the events
                             if (ids.length > 1) {
                                 for (int i = 0; i < rels.length; i++) {
                                     if (rels[i] == '&') {
@@ -89,7 +108,7 @@ public class Order {
                                     }
                                 }
                             }
-
+                            // Add the dependencies
                             HashMap<String, Object> dependency = new HashMap<>();
                             dependency.put("missing", missing);
                             dependency.put("remove", remove);

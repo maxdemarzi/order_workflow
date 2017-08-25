@@ -56,7 +56,8 @@ public class OrderTest {
         "CREATE (t3:Task {id:'t3'})" +
         "CREATE (e1:Event {id:'e1'})" +
         "CREATE (e4:Event {id:'e4'})" +
-
+        "CREATE (e2:Event {id:'e2'})" +
+        "CREATE (e2neg:Event {id:'-e2'})" +
         "CREATE (o)-[:HAS_WORK]->(w1)" +
         "CREATE (o)-[:HAS_WORK]->(w2)" +
         "CREATE (p1)-[:PERFORMS]->(w1)" +
@@ -65,6 +66,8 @@ public class OrderTest {
         "CREATE (w2)-[:HAS_TASK]->(t2)" +
         "CREATE (w2)-[:HAS_TASK]->(t3)" +
         "CREATE (e1)-[:FIRST]->(o)" +
-        "CREATE (e4)-[:PREVIOUS]->(e1)";
+        "CREATE (e4)-[:PREVIOUS]->(e1)"+
+        "CREATE (e2)-[:PREVIOUS]->(e4)"+
+        "CREATE (e2neg)-[:PREVIOUS]->(e2)";
 
 }
